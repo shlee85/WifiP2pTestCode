@@ -50,6 +50,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
         }
     }
 
+    @RequiresApi(Build.VERSION_CODES.R)
     override fun onCreate(savedInstanceState: Bundle?) {
         Log.i(TAG, "onCreate")
         super.onCreate(savedInstanceState)
@@ -139,6 +140,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
         })
     }
 
+    @RequiresApi(Build.VERSION_CODES.R)
     private fun discoverService() {
 
 
