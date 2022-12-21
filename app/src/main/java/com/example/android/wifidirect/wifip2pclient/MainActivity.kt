@@ -2,188 +2,238 @@ package com.example.android.wifidirect.wifip2pclient
 
 import android.Manifest
 import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.net.wifi.WpsInfo
+import android.net.NetworkInfo
 import android.net.wifi.p2p.WifiP2pConfig
 import android.net.wifi.p2p.WifiP2pDevice
 import android.net.wifi.p2p.WifiP2pInfo
 import android.net.wifi.p2p.WifiP2pManager
 import android.net.wifi.p2p.WifiP2pManager.ConnectionInfoListener
-import android.net.wifi.p2p.nsd.WifiP2pDnsSdServiceInfo
 import android.net.wifi.p2p.nsd.WifiP2pDnsSdServiceRequest
-import android.os.Build
-import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
+import android.os.*
 import android.util.Log
-import androidx.annotation.RequiresApi
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
-import java.io.IOException
-import java.io.InputStream
-import java.io.OutputStream
-import java.net.InetAddress
-import java.net.InetSocketAddress
-import java.net.Socket
-import java.time.LocalDate
+
 
 class MainActivity : AppCompatActivity(), ConnectionInfoListener {
-    private lateinit var manager: WifiP2pManager
-    private lateinit var channel: WifiP2pManager.Channel
-    private lateinit var serviceRequest: WifiP2pDnsSdServiceRequest
-
-    class WiFiP2pService {
-        var device: WifiP2pDevice? = null
-        var instanceName: String? = null
-        var serviceRegistrationType: String? = null
+    private var strGatewayIp = ""
+    private var bPermissionGranted = false
+    var isWifiP2pEnabled = false
+    private var p2pHandler: Handler? = null
+    fun setWifiP2pEnable(bEnabled: Boolean) {
+        if (isWifiP2pEnabled != bEnabled) {
+            isWifiP2pEnabled = bEnabled
+            Log.i(TAG, "setWifiP2pEnable:$isWifiP2pEnabled")
+            p2pHandler?.removeMessages(P2P_HANDLER_MSG_CONNECT)
+            p2pHandler?.removeMessages(P2P_HANDLER_MSG_GROUP_INFO)
+            if (isWifiP2pEnabled) {
+                startSearchServer()
+                p2pHandler?.sendEmptyMessageDelayed(P2P_HANDLER_MSG_GROUP_INFO, 200)
+            } else {
+                stopSearchServer()
+                strGatewayIp = ""
+            }
+        }
+    }
+    fun setWifiP2pConnect(bConnect: Boolean) {
+        stopSearchServer()
+        strGatewayIp = ""
     }
 
-    val testService: WiFiP2pService = WiFiP2pService()
     override fun onRequestPermissionsResult(
         requestCode: Int, permissions: Array<out String>, grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == PERMISSIONS_REQUEST_CODE && grantResults[0] != PackageManager.PERMISSION_GRANTED) {
-            Log.e(TAG, "Fine location permission is not granted!")
-            finish()
+        if (requestCode == PERMISSIONS_REQUEST_CODE) {
+            if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                bPermissionGranted = true
+                p2pStart()
+            } else {
+                Log.e(TAG, "Fine location permission is not granted!")
+                finish()
+            }
         }
     }
 
-    @RequiresApi(Build.VERSION_CODES.R)
     override fun onCreate(savedInstanceState: Bundle?) {
         Log.i(TAG, "onCreate")
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
-        manager = getSystemService(WIFI_P2P_SERVICE) as WifiP2pManager
-        channel = manager.initialize(this, mainLooper, null)
-
-        if (ActivityCompat.checkSelfPermission(
-                this, Manifest.permission.ACCESS_FINE_LOCATION
-            ) != PackageManager.PERMISSION_GRANTED
+        if (checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED ||
+            checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED ||
+            checkSelfPermission(Manifest.permission.ACCESS_WIFI_STATE) != PackageManager.PERMISSION_GRANTED ||
+            checkSelfPermission(Manifest.permission.ACCESS_NETWORK_STATE) != PackageManager.PERMISSION_GRANTED
         ) {
-            Log.i(TAG, "requestPermissions")
             requestPermissions(
-                arrayOf(Manifest.permission.ACCESS_FINE_LOCATION), PERMISSIONS_REQUEST_CODE
+                arrayOf(
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_WIFI_STATE,
+                    Manifest.permission.ACCESS_NETWORK_STATE
+                ),
+                PERMISSIONS_REQUEST_CODE
             )
         } else {
-            Log.i(TAG, "discoverService")
-            discoverService()
+            bPermissionGranted = true
+            Log.i(TAG, "bPermissionGranted")
+        }
+        p2pManager = getSystemService(Context.WIFI_P2P_SERVICE) as WifiP2pManager
+        p2pChannel = p2pManager.initialize(this, mainLooper, null)
+        if (p2pHandler == null) {
+            p2pHandler = Handler(Looper.getMainLooper()) { msg ->
+                when (msg.what) {
+                    P2P_HANDLER_MSG_GROUP_INFO -> {
+                        p2pManager.requestGroupInfo(p2pChannel) { group ->
+                            //Log.i(TAG, "requestGroupInfo:$group")
+                            if (group?.networkName == NETWORK_NAME) {
+                                p2pManager.requestConnectionInfo(p2pChannel) { info ->
+                                    Log.i(TAG, "requestConnectionInfo:$info")
+                                    if (info?.groupOwnerAddress?.hostAddress?.isNotBlank() == true) {
+                                        val strGatewayIP = info.groupOwnerAddress?.hostAddress.toString()
+                                        p2pState = P2P_STATE_FIND_GATEWAY
+                                        Log.i(TAG, "FIND_GATEWAY:$strGatewayIP")
+                                        strGatewayIp = strGatewayIP
+                                    } else {
+                                        p2pHandler?.sendEmptyMessageDelayed(P2P_HANDLER_MSG_GROUP_INFO, 300)
+                                    }
+                                }
+                            } else {
+                                p2pHandler?.sendEmptyMessageDelayed(P2P_HANDLER_MSG_GROUP_INFO, 300)
+                            }
+                        }
+                    }
+                    P2P_HANDLER_MSG_CONNECT -> {
+                        val config = WifiP2pConfig.Builder()
+                            .setNetworkName("DIRECT-TUNER14")
+                            .setPassphrase("pass1234")
+                            .enablePersistentMode(true)
+                            .setGroupOperatingBand(WifiP2pConfig.GROUP_OWNER_BAND_5GHZ)
+                            .build()
+                        config.deviceAddress = msg.obj as String // device.deviceAddress
+                        Log.i(TAG, "config.deviceAddress:${config.deviceAddress}")
+                        p2pManager.connect(
+                            p2pChannel, config,
+                            object : WifiP2pManager.ActionListener {
+                                override fun onSuccess() {
+                                    Log.i(TAG, "connect onSuccess")
+                                }
+
+                                override fun onFailure(errorCode: Int) {
+                                    Log.i(TAG, "connect onFailure")
+                                    if (msg.arg1 > 0) {
+                                        Message().let {
+                                            it.what =
+                                                P2P_HANDLER_MSG_CONNECT // onFailure 시 재시도를 위해 핸들러로 처리한다.
+                                            it.arg1 = msg.arg1 - 1 // retry count
+                                            it.obj = msg.obj
+                                            p2pHandler?.sendMessageDelayed(it, 300)
+                                        }
+                                    }
+                                }
+                            })
+                    }
+                }
+                true
+            }
         }
     }
 
-    private var receiver: BroadcastReceiver? = null
     override fun onResume() {
         super.onResume()
-
-        receiver = WiFiDirectBroadcastReceiver(manager, channel, this)
-        val intentFilter = IntentFilter()
-        intentFilter.addAction(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION)
-        intentFilter.addAction(WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION)
-        intentFilter
-            .addAction(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION)
-        intentFilter
-            .addAction(WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION)
-        registerReceiver(receiver, intentFilter)
+        if (bPermissionGranted) {
+            Log.i(TAG, "p2pStart:onResume")
+            p2pStart()
+        }
     }
 
     override fun onPause() {
         super.onPause()
-        unregisterReceiver(receiver)
+        p2pStop()
     }
 
-    @RequiresApi(Build.VERSION_CODES.R)
-    private fun connectP2p(service: WiFiP2pService) {
-        Log.i(TAG, "connectP2p")
-
-        Log.i(TAG, "deviceName:" + service.device!!.deviceName)
-        //Log.i(TAG, "deviceName:" + service.device!!.wfdInfo?.toString())
-        Log.i(TAG, "isGroupOwner:" + service.device!!.isGroupOwner)
-        manager.removeServiceRequest(channel, serviceRequest,
-            object : WifiP2pManager.ActionListener {
-                override fun onSuccess() {}
-                override fun onFailure(arg0: Int) {}
-            })
-        if (ActivityCompat.checkSelfPermission(
-                this,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            Log.i(TAG, "ACCESS_FINE_LOCATION permission error")
-            return
-        }
-
-        val config = WifiP2pConfig.Builder()
-            .setNetworkName("DIRECT-TUNER14")
-            .setPassphrase("pass1234")
-            .enablePersistentMode(true)
-            .setGroupOperatingBand(WifiP2pConfig.GROUP_OWNER_BAND_5GHZ)
-            .build()
-
-        //val config = WifiP2pConfig()
-        config.deviceAddress = service.device!!.deviceAddress
-        //config.passphrase
-        Log.i(TAG, "config.deviceAddress:${config.deviceAddress}")
-        //config.wps.setup =  WpsInfo.PBC
-        //config.wps.pin = "1234"
-        //config. ..passphrase = "pass1234"
-
-        manager.connect(channel, config, object : WifiP2pManager.ActionListener {
-            override fun onSuccess() {
-                Log.i(TAG, "connect onSuccess")
-            }
-
-            override fun onFailure(errorCode: Int) {
-                Log.i(TAG, "connect onFailure")
-            }
-        })
+    companion object {
+        const val TAG = "P2PClient"
+        const val PERMISSIONS_REQUEST_CODE = 1001
+        const val P2P_STATE_WIFI_TURNED_OFF = 0
+        const val P2P_STATE_NO_GATEWAY = 1
+        const val P2P_STATE_FIND_GATEWAY = 2
+        const val NETWORK_NAME = "DIRECT-TUNER14"
+        const val SERVICE_INSTANCE = "_wifidemotest"
+        const val P2P_HANDLER_MSG_CONNECT = 0
+        const val P2P_HANDLER_MSG_GROUP_INFO = 1
     }
 
-    @RequiresApi(Build.VERSION_CODES.R)
-    private fun discoverService() {
+    override fun onConnectionInfoAvailable(p2pInfo: WifiP2pInfo) {
+        Log.i(TAG, "onConnectionInfoAvailable $p2pInfo")
+        //p2pState = P2P_STATE_FIND_GATEWAY
+        //Log.i(TAG, "*FIND_GATEWAY:${p2pInfo.groupOwnerAddress.hostAddress}")
+    }
 
 
-        manager.setDnsSdResponseListeners(channel,
-            { instanceName, registrationType, srcDevice ->
-                Log.d(TAG, "setDnsSdResponseListeners1 $instanceName $registrationType $srcDevice")
+    private var p2pState = P2P_STATE_WIFI_TURNED_OFF
+    private lateinit var p2pChannel: WifiP2pManager.Channel
+    private lateinit var p2pManager: WifiP2pManager
+
+    private var p2pBroadcastReceiver: WiFiDirectBroadcastReceiver1? = null
+    private var serviceRequest: WifiP2pDnsSdServiceRequest? = null
+
+    private fun p2pStart() {
+        p2pBroadcastReceiver = WiFiDirectBroadcastReceiver1(p2pManager, p2pChannel, this)
+        val intentFilter = IntentFilter()
+        intentFilter.addAction(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION)
+        intentFilter.addAction(WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION)
+        intentFilter.addAction(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION)
+        intentFilter.addAction(WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION)
+        registerReceiver(p2pBroadcastReceiver, intentFilter)
+    }
+
+    private fun p2pStop() {
+        unregisterReceiver(p2pBroadcastReceiver)
+    }
+
+    private fun startSearchServer() {
+        Log.i(TAG, "startSearchServer")
+        p2pManager.setDnsSdResponseListeners(
+            p2pChannel,
+            { instanceName, registrationType, device ->
+                Log.d(
+                    TAG,
+                    "DnsSdResponseListeners $instanceName $registrationType $device"
+                )
                 if (instanceName.equals(SERVICE_INSTANCE, ignoreCase = true)) {
-                    Log.d(TAG, "THIS IS MY SERVICE")
-                    testService.device = srcDevice
-                    testService.instanceName = instanceName
-                    testService.serviceRegistrationType = registrationType
-                    connectP2p(testService)
+                    Message().let {
+                        it.what = P2P_HANDLER_MSG_CONNECT // onFailure 시 재시도를 위해 핸들러로 처리한다.
+                        it.arg1 = 3
+                        it.obj = device.deviceAddress
+                        p2pHandler?.sendMessageDelayed(it, 200)
+                    }
                 }
             },
             { fullDomainName, record, device ->
-                Log.d(TAG, "setDnsSdResponseListeners2 $fullDomainName $record $device")
+                Log.d(
+                    TAG,
+                    "setDnsSdResponseListeners2 $fullDomainName $record $device"
+                )
             })
-
         serviceRequest = WifiP2pDnsSdServiceRequest.newInstance()
-        manager.addServiceRequest(
-            channel,
-            serviceRequest,
+        p2pManager.addServiceRequest(
+            p2pChannel, serviceRequest,
             object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
-                    Log.i(TAG, "addServiceRequeston Success ")
+                    Log.i(TAG, "addServiceRequest onSuccess")
                 }
 
                 override fun onFailure(code: Int) {
-                    // Command failed.  Check for P2P_UNSUPPORTED, ERROR, or BUSY
-                    Log.i(TAG, "addServiceRequeston onFailure ")
+                    Log.i(TAG, "addServiceRequest onFailure")
                 }
             }
         )
-        if (ActivityCompat.checkSelfPermission(
-                this,
-                Manifest.permission.ACCESS_FINE_LOCATION
-            ) != PackageManager.PERMISSION_GRANTED
-        ) {
-            Log.i(TAG, "ACCESS_FINE_LOCATION !PERMISSION_GRANTED ")
-            return
-        }
-        manager.discoverServices(
-            channel,
+        p2pManager.discoverServices(
+            p2pChannel,
             object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
                     Log.i(TAG, "discoverServices onSuccess ")
@@ -194,144 +244,55 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                 }
             }
         )
-
-
     }
 
-    companion object {
-        const val TAG = "P2PClient"
-
-        const val SERVER_PORT = 4669
-        const val PERMISSIONS_REQUEST_CODE = 1001
-
-        //const val RECORD_PROP_AVAILABLE = "available"
-        const val SERVICE_INSTANCE = "_wifidemotest"
-
-        //const val SERVICE_REG_TYPE = "_presence._tcp"
-        const val MESSAGE_READ = 0x400 + 1
-        const val MY_HANDLE = 0x400 + 2
-    }
-
-    private val msgHandler = Handler(Looper.getMainLooper()) {
-        Log.i(TAG, it.toString())
-        when (it.what) {
-            MESSAGE_READ -> {
-                Log.i(TAG, "MESSAGE_READ" + it.arg1 + " " + it.arg2)
-            }
+    private fun stopSearchServer() {
+        if (serviceRequest != null) {
+            p2pManager.removeServiceRequest(
+                p2pChannel, serviceRequest,
+                object : WifiP2pManager.ActionListener {
+                    override fun onSuccess() {}
+                    override fun onFailure(arg0: Int) {}
+                })
+            serviceRequest = null
         }
-        return@Handler true
     }
 
-    override fun onConnectionInfoAvailable(p2pInfo: WifiP2pInfo) {
-        Log.i(TAG, "onConnectionInfoAvailable $p2pInfo")
-        val handler: Thread = ClientSocketHandler(msgHandler, p2pInfo.groupOwnerAddress)
-        handler.start()
-    }
-
-    class ClientSocketHandler(private val handler: Handler, private val mAddress: InetAddress) :
-        Thread() {
-        private var chat: ChatManager? = null
-        override fun run() {
-            val socket = Socket()
-            try {
-                socket.bind(null)
-                socket.connect(
-                    InetSocketAddress(
-                        mAddress.hostAddress,
-                        SERVER_PORT
-                    ), 5000
-                )
-                Log.d(TAG, "${mAddress.hostAddress} $SERVER_PORT Launching the I/O handler")
-                chat = ChatManager(socket, handler)
-                Thread(chat).start()
-            } catch (e: IOException) {
-                e.printStackTrace()
-                try {
-                    socket.close()
-                } catch (e1: IOException) {
-                    e1.printStackTrace()
+    class WiFiDirectBroadcastReceiver1(
+        private val manager: WifiP2pManager, private val channel: WifiP2pManager.Channel,
+        private val activity: MainActivity
+    ) : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            intent.action?.let { Log.d(TAG, it) }
+            when (intent.action) {
+                WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION -> {
+                    val state = intent.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, -1)
+                    activity.setWifiP2pEnable(state == WifiP2pManager.WIFI_P2P_STATE_ENABLED)
                 }
-                return
-            }
-        }
-
-        fun getChat(): ChatManager? {
-            return chat
-        }
-
-        companion object {
-            private const val TAG = "ClientSocketHandler"
-        }
-    }
-
-    class ChatManager(private val socket: Socket, private val handler: Handler) :
-        Runnable {
-        //private val socket: Socket? = null
-        //private val handler: Handler
-        private lateinit var iStream: InputStream
-        private lateinit var oStream: OutputStream
-        @RequiresApi(Build.VERSION_CODES.O)
-        override fun run() {
-            try {
-                iStream = socket.getInputStream()
-                oStream = socket.getOutputStream()
-                val buffer = ByteArray(1024)
-                var bytes: Int
-                //handler.obtainMessage(MY_HANDLE, this)
-                //    .sendToTarget()
-                write(LocalDate.now().toString())
-                while (true) {
-                    try {
-                        // Read from the InputStream
-                        bytes = iStream.read(buffer)
-                        if (bytes == -1) {
-                            break
+                WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION -> {
+                    //Log.d(TAG, "Device status -$intent")
+                    manager.requestPeers(channel) { peerList ->
+                        for (device in peerList.deviceList) {
+                            Log.d(TAG, "device.status:${device.deviceName} ${device.status}") // 0이면 connect
+                            //Log.d(TAG, device.toString())
                         }
-
-                        // Send the obtained bytes to the UI Activity
-                        Log.d(TAG, "Rec:" + String(buffer))
-                        handler.obtainMessage(
-                            MESSAGE_READ,
-                            bytes, -1, buffer
-                        ).sendToTarget()
-                    } catch (e: IOException) {
-                        Log.e(TAG, "disconnected", e)
                     }
                 }
-            } catch (e: IOException) {
-                e.printStackTrace()
-            } finally {
-                try {
-                    socket.close()
-                } catch (e: IOException) {
-                    e.printStackTrace()
+                WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION -> {
+                    val networkInfo = intent
+                        .getParcelableExtra<Parcelable>(WifiP2pManager.EXTRA_NETWORK_INFO) as NetworkInfo?
+                    if (networkInfo?.isConnected == true)
+                        manager.requestConnectionInfo(channel, activity as ConnectionInfoListener)
+                    activity.setWifiP2pConnect(networkInfo?.isConnected == true)
+
+                }
+                WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION -> {
+                    val device = intent
+                        .getParcelableExtra<Parcelable>(WifiP2pManager.EXTRA_WIFI_P2P_DEVICE) as WifiP2pDevice?
+                    Log.d(TAG, "WIFI_P2P_THIS_DEVICE_CHANGED_ACTION:" + device!!.status)
                 }
             }
-        }
-
-        private fun write(msg: String) {
-            val buffer = msg.toByteArray()
-            val thread: Thread = object : Thread() {
-                override fun run() {
-                    try {
-                        oStream.write(buffer)
-                    } catch (e: IOException) {
-                        Log.e(TAG, "Exception during write", e)
-                    }
-                }
-            }
-            thread.start()
-        }
-
-        companion object {
-            private const val TAG = "ChatHandler"
-        }
-
-        init {
-            //this.socket = socket
-            //this.handler = handler
         }
     }
-
-
 }
+
