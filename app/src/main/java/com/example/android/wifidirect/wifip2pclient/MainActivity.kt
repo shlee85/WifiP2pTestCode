@@ -142,7 +142,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
     private lateinit var p2pChannel: WifiP2pManager.Channel
     private lateinit var p2pManager: WifiP2pManager
 
-    private var p2pBroadcastReceiver: WiFiDirectBroadcastReceiver1? = null
+    private var p2pBroadcastReceiver: WiFiDirectBroadcastReceiver? = null
     private var p2pServiceRequest: WifiP2pDnsSdServiceRequest? = null
 
     private var testPingService: Timer? = null // 테스트용 핑
@@ -276,7 +276,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                 true
             }
         }
-        p2pBroadcastReceiver = WiFiDirectBroadcastReceiver1(p2pManager, p2pChannel, this)
+        p2pBroadcastReceiver = WiFiDirectBroadcastReceiver(p2pManager, p2pChannel, this)
         val intentFilter = IntentFilter()
         intentFilter.addAction(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION)
         intentFilter.addAction(WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION)
@@ -353,7 +353,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
         }
     }
 
-    class WiFiDirectBroadcastReceiver1(
+    class WiFiDirectBroadcastReceiver(
         private val manager: WifiP2pManager, private val channel: WifiP2pManager.Channel,
         private val activity: MainActivity
     ) : BroadcastReceiver() {
