@@ -136,7 +136,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
     private lateinit var p2pManager: WifiP2pManager
 
     private var p2pBroadcastReceiver: WiFiDirectBroadcastReceiver1? = null
-    private var serviceRequest: WifiP2pDnsSdServiceRequest? = null
+    private var p2pServiceRequest: WifiP2pDnsSdServiceRequest? = null
 
 
     private fun p2pStateConnecting() {
@@ -245,12 +245,12 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
     }
 
     private fun startSearchServer() {
-        if (serviceRequest != null) {
+        if (p2pServiceRequest != null) {
             Log.i(TAG, "startSearchServer already run")
             return
         }
         Log.i(TAG, "startSearchServer")
-        serviceRequest = WifiP2pDnsSdServiceRequest.newInstance()
+        p2pServiceRequest = WifiP2pDnsSdServiceRequest.newInstance()
         p2pManager.setDnsSdResponseListeners(
             p2pChannel,
             { instanceName, registrationType, device ->
@@ -274,7 +274,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                 )
             })
         p2pManager.addServiceRequest(
-            p2pChannel, serviceRequest,
+            p2pChannel, p2pServiceRequest,
             object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
                     Log.i(TAG, "addServiceRequest onSuccess")
@@ -300,14 +300,14 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
     }
 
     private fun stopSearchServer() {
-        if (serviceRequest != null) {
+        if (p2pServiceRequest != null) {
             p2pManager.removeServiceRequest(
-                p2pChannel, serviceRequest,
+                p2pChannel, p2pServiceRequest,
                 object : WifiP2pManager.ActionListener {
                     override fun onSuccess() {}
                     override fun onFailure(arg0: Int) {}
                 })
-            serviceRequest = null
+            p2pServiceRequest = null
         }
     }
 
