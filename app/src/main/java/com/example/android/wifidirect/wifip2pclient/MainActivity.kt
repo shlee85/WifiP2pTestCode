@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.graphics.Color
 import android.net.NetworkInfo
 import android.net.wifi.p2p.WifiP2pConfig
 import android.net.wifi.p2p.WifiP2pDevice
@@ -17,6 +18,10 @@ import android.os.*
 import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import com.example.android.wifidirect.wifip2pclient.databinding.ActivityMainBinding
+import java.net.InetAddress
+import java.time.LocalDateTime
+import java.util.*
+import kotlin.concurrent.timer
 
 class MainActivity : AppCompatActivity(), ConnectionInfoListener {
     private lateinit var binding: ActivityMainBinding
@@ -140,20 +145,45 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
     private var p2pBroadcastReceiver: WiFiDirectBroadcastReceiver1? = null
     private var p2pServiceRequest: WifiP2pDnsSdServiceRequest? = null
 
+    private var testPingService: Timer? = null // 테스트용 핑
 
     private fun p2pStateConnecting() {
         val strMessage = "Connecting..."
         binding.tvMessage.text = strMessage
+        if (testPingService != null) {
+            testPingService?.cancel()
+            testPingService = null
+        }
     }
 
     private fun p2pStateWiFiOff() {
         val strMessage = "Wi-Fi disconnected"
         binding.tvMessage.text = strMessage
+        if (testPingService != null) {
+            testPingService?.cancel()
+            testPingService = null
+        }
     }
 
     private fun p2pStateConnected(ip: String) {
         val strMessage = "Connected $ip"
         binding.tvMessage.text = strMessage
+        if (testPingService == null) { // 이 타이머는 서버와의 연결 확인 테스트 용임
+            testPingService = timer(period = 1000, initialDelay = 1000)
+            {
+                try {
+                    val address: InetAddress = InetAddress.getByName(ip)
+                    val reachable: Boolean = address.isReachable(500)
+                    val strText = "${LocalDateTime.now()}  ping:$reachable"
+                    runOnUiThread {
+                        binding.tvPing.setTextColor(if (reachable) Color.BLUE else Color.RED)
+                        binding.tvPing.text = strText
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
     }
 
     private fun p2pStart() {
