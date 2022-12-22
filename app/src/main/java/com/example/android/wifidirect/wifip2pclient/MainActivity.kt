@@ -55,6 +55,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
     fun clearP2pHandlerMessage() {
         p2pHandler?.removeMessages(P2P_HANDLER_MSG_CONNECT)
         p2pHandler?.removeMessages(P2P_HANDLER_MSG_GROUP_INFO)
+        p2pHandler?.removeMessages(P2P_HANDLER_MSG_DISCOVER_SERVICE)
         p2pHandler?.removeMessages(P2P_HANDLER_MSG_STATE_CONNECTING)
         p2pHandler?.removeMessages(P2P_HANDLER_MSG_STATE_WIFI_OFF)
         p2pHandler?.removeMessages(P2P_HANDLER_MSG_STATE_CONNECTED)
@@ -123,9 +124,10 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
         const val SERVICE_INSTANCE = "_wifidemotest"
         const val P2P_HANDLER_MSG_CONNECT = 0
         const val P2P_HANDLER_MSG_GROUP_INFO = 1
-        const val P2P_HANDLER_MSG_STATE_CONNECTING = 2 // 상태 메시지 연결중
-        const val P2P_HANDLER_MSG_STATE_WIFI_OFF = 3 // 상태 메시지 WIFI OFF
-        const val P2P_HANDLER_MSG_STATE_CONNECTED = 4 // 상태 메시지 연결됨
+        const val P2P_HANDLER_MSG_DISCOVER_SERVICE = 2
+        const val P2P_HANDLER_MSG_STATE_CONNECTING = 3 // 상태 메시지 연결중
+        const val P2P_HANDLER_MSG_STATE_WIFI_OFF = 4 // 상태 메시지 WIFI OFF
+        const val P2P_HANDLER_MSG_STATE_CONNECTED = 5 // 상태 메시지 연결됨
     }
 
     override fun onConnectionInfoAvailable(p2pInfo: WifiP2pInfo) {
@@ -157,9 +159,19 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
     private fun p2pStart() {
         if (p2pHandler == null) {
             p2pHandler = Handler(Looper.getMainLooper()) { msg ->
+                val strMessage = when (msg.what) {
+                    P2P_HANDLER_MSG_CONNECT -> "P2P_HANDLER_MSG_CONNECT"
+                    P2P_HANDLER_MSG_GROUP_INFO -> "P2P_HANDLER_MSG_GROUP_INFO"
+                    P2P_HANDLER_MSG_DISCOVER_SERVICE -> "P2P_HANDLER_MSG_DISCOVER_SERVICE"
+                    P2P_HANDLER_MSG_STATE_CONNECTING -> "P2P_HANDLER_MSG_STATE_CONNECTING"
+                    P2P_HANDLER_MSG_STATE_WIFI_OFF -> "P2P_HANDLER_MSG_STATE_WIFI_OFF"
+                    P2P_HANDLER_MSG_STATE_CONNECTED -> "P2P_HANDLER_MSG_STATE_CONNECTED"
+                    else -> "UNKNOWN"
+                }
+                Log.i(TAG, strMessage)
                 when (msg.what) {
                     P2P_HANDLER_MSG_STATE_CONNECTING -> {
-                        p2pHandler?.sendEmptyMessageDelayed(P2P_HANDLER_MSG_GROUP_INFO, 200)
+                        p2pHandler?.sendEmptyMessageDelayed(P2P_HANDLER_MSG_GROUP_INFO, 300)
                         p2pStateConnecting()
                     }
                     P2P_HANDLER_MSG_STATE_WIFI_OFF -> {
@@ -167,6 +179,21 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                     }
                     P2P_HANDLER_MSG_STATE_CONNECTED -> {
                         p2pStateConnected(msg.obj as String)
+                    }
+                    P2P_HANDLER_MSG_DISCOVER_SERVICE -> {
+                        p2pHandler?.sendEmptyMessageDelayed(P2P_HANDLER_MSG_DISCOVER_SERVICE, 3000)
+                        p2pManager.discoverServices(
+                            p2pChannel,
+                            object : WifiP2pManager.ActionListener {
+                                override fun onSuccess() {
+                                    Log.i(TAG, "discoverServices onSuccess ")
+                                }
+
+                                override fun onFailure(code: Int) {
+                                    Log.i(TAG, "discoverServices onFailure ")
+                                }
+                            }
+                        )
                     }
                     P2P_HANDLER_MSG_GROUP_INFO -> {
                         p2pManager.requestGroupInfo(p2pChannel) { group ->
@@ -207,19 +234,11 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                             object : WifiP2pManager.ActionListener {
                                 override fun onSuccess() {
                                     Log.i(TAG, "connect onSuccess")
+                                    p2pHandler?.removeMessages(P2P_HANDLER_MSG_CONNECT)
                                 }
 
                                 override fun onFailure(errorCode: Int) {
                                     Log.i(TAG, "connect onFailure")
-                                    if (msg.arg1 > 0) {
-                                        Message().let {
-                                            it.what =
-                                                P2P_HANDLER_MSG_CONNECT // onFailure 시 재시도를 위해 핸들러로 처리한다.
-                                            it.arg1 = msg.arg1 - 1 // retry count
-                                            it.obj = msg.obj
-                                            p2pHandler?.sendMessageDelayed(it, 300)
-                                        }
-                                    }
                                 }
                             })
                     }
@@ -259,11 +278,15 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                     "DnsSdResponseListeners $instanceName $registrationType $device"
                 )
                 if (instanceName.equals(SERVICE_INSTANCE, ignoreCase = true)) {
-                    Message().let {
-                        it.what = P2P_HANDLER_MSG_CONNECT // onFailure 시 재시도를 위해 핸들러로 처리한다.
-                        it.arg1 = 3
-                        it.obj = device.deviceAddress
-                        p2pHandler?.sendMessageDelayed(it, 200)
+                    for (i in 1..5) {
+                        Message().let { msg ->
+                            msg.what = P2P_HANDLER_MSG_CONNECT // onFailure 시 재시도를 위해 핸들러로 처리한다.
+                            msg.arg1 = i
+                            msg.obj = device.deviceAddress
+                            // 한번에 다 보내고 성공하면 모두 취소한다.
+                            // connect 할 때 error 발생이 많다.
+                            p2pHandler?.sendMessageDelayed(msg, 250L * i)
+                        }
                     }
                 }
             },
@@ -285,18 +308,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                 }
             }
         )
-        p2pManager.discoverServices(
-            p2pChannel,
-            object : WifiP2pManager.ActionListener {
-                override fun onSuccess() {
-                    Log.i(TAG, "discoverServices onSuccess ")
-                }
-
-                override fun onFailure(code: Int) {
-                    Log.i(TAG, "discoverServices onFailure ")
-                }
-            }
-        )
+        p2pHandler?.sendEmptyMessage(P2P_HANDLER_MSG_DISCOVER_SERVICE)
     }
 
     private fun stopSearchServer() {
