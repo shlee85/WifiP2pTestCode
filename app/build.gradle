@@ -5,7 +5,9 @@ plugins {
 
 android {
     compileSdk 33
-
+    buildFeatures {
+        viewBinding true
+    }
     defaultConfig {
         applicationId "com.example.android.wifidirect.wifip2pclient"
         minSdk 30

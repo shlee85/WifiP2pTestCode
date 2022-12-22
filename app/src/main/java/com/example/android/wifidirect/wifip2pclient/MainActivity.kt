@@ -16,10 +16,10 @@ import android.net.wifi.p2p.nsd.WifiP2pDnsSdServiceRequest
 import android.os.*
 import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
-
+import com.example.android.wifidirect.wifip2pclient.databinding.ActivityMainBinding
 
 class MainActivity : AppCompatActivity(), ConnectionInfoListener {
-    private var strGatewayIp = ""
+    private lateinit var binding: ActivityMainBinding
     private var bPermissionGranted = false
     var isWifiP2pEnabled = false
     private var p2pHandler: Handler? = null
@@ -27,20 +27,37 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
         if (isWifiP2pEnabled != bEnabled) {
             isWifiP2pEnabled = bEnabled
             Log.i(TAG, "setWifiP2pEnable:$isWifiP2pEnabled")
-            p2pHandler?.removeMessages(P2P_HANDLER_MSG_CONNECT)
-            p2pHandler?.removeMessages(P2P_HANDLER_MSG_GROUP_INFO)
+            clearP2pHandlerMessage()
             if (isWifiP2pEnabled) {
                 startSearchServer()
-                p2pHandler?.sendEmptyMessageDelayed(P2P_HANDLER_MSG_GROUP_INFO, 200)
+                p2pHandler?.sendEmptyMessage(P2P_HANDLER_MSG_STATE_CONNECTING)
             } else {
                 stopSearchServer()
-                strGatewayIp = ""
+                p2pHandler?.sendEmptyMessage(P2P_HANDLER_MSG_STATE_WIFI_OFF)
             }
         }
     }
+
     fun setWifiP2pConnect(bConnect: Boolean) {
-        stopSearchServer()
-        strGatewayIp = ""
+        Log.i(TAG, "setWifiP2pConnect:$bConnect")
+        if (!bConnect) { // 연결중인 서버가 종료되면 bConnect = false로 동작한다.
+            clearP2pHandlerMessage()
+            if (isWifiP2pEnabled) {
+                startSearchServer()
+                p2pHandler?.sendEmptyMessage(P2P_HANDLER_MSG_STATE_CONNECTING)
+            } else {
+                stopSearchServer()
+                p2pHandler?.sendEmptyMessage(P2P_HANDLER_MSG_STATE_WIFI_OFF)
+            }
+        }
+    }
+
+    fun clearP2pHandlerMessage() {
+        p2pHandler?.removeMessages(P2P_HANDLER_MSG_CONNECT)
+        p2pHandler?.removeMessages(P2P_HANDLER_MSG_GROUP_INFO)
+        p2pHandler?.removeMessages(P2P_HANDLER_MSG_STATE_CONNECTING)
+        p2pHandler?.removeMessages(P2P_HANDLER_MSG_STATE_WIFI_OFF)
+        p2pHandler?.removeMessages(P2P_HANDLER_MSG_STATE_CONNECTED)
     }
 
     override fun onRequestPermissionsResult(
@@ -61,7 +78,8 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
     override fun onCreate(savedInstanceState: Bundle?) {
         Log.i(TAG, "onCreate")
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_main)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
 
         if (checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED ||
             checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED ||
@@ -83,9 +101,73 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
         }
         p2pManager = getSystemService(Context.WIFI_P2P_SERVICE) as WifiP2pManager
         p2pChannel = p2pManager.initialize(this, mainLooper, null)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (bPermissionGranted) {
+            Log.i(TAG, "p2pStart:onResume")
+            p2pStart()
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        p2pStop()
+    }
+
+    companion object {
+        const val TAG = "P2PClient"
+        const val PERMISSIONS_REQUEST_CODE = 1001
+        const val NETWORK_NAME = "DIRECT-TUNER14"
+        const val SERVICE_INSTANCE = "_wifidemotest"
+        const val P2P_HANDLER_MSG_CONNECT = 0
+        const val P2P_HANDLER_MSG_GROUP_INFO = 1
+        const val P2P_HANDLER_MSG_STATE_CONNECTING = 2 // 상태 메시지 연결중
+        const val P2P_HANDLER_MSG_STATE_WIFI_OFF = 3 // 상태 메시지 WIFI OFF
+        const val P2P_HANDLER_MSG_STATE_CONNECTED = 4 // 상태 메시지 연결됨
+    }
+
+    override fun onConnectionInfoAvailable(p2pInfo: WifiP2pInfo) {
+        Log.i(TAG, "onConnectionInfoAvailable $p2pInfo")
+    }
+
+    private lateinit var p2pChannel: WifiP2pManager.Channel
+    private lateinit var p2pManager: WifiP2pManager
+
+    private var p2pBroadcastReceiver: WiFiDirectBroadcastReceiver1? = null
+    private var serviceRequest: WifiP2pDnsSdServiceRequest? = null
+
+
+    private fun p2pStateConnecting() {
+        val strMessage = "Connecting..."
+        binding.tvMessage.text = strMessage
+    }
+
+    private fun p2pStateWiFiOff() {
+        val strMessage = "Wi-Fi disconnected"
+        binding.tvMessage.text = strMessage
+    }
+
+    private fun p2pStateConnected(ip: String) {
+        val strMessage = "Connected $ip"
+        binding.tvMessage.text = strMessage
+    }
+
+    private fun p2pStart() {
         if (p2pHandler == null) {
             p2pHandler = Handler(Looper.getMainLooper()) { msg ->
                 when (msg.what) {
+                    P2P_HANDLER_MSG_STATE_CONNECTING -> {
+                        p2pHandler?.sendEmptyMessageDelayed(P2P_HANDLER_MSG_GROUP_INFO, 200)
+                        p2pStateConnecting()
+                    }
+                    P2P_HANDLER_MSG_STATE_WIFI_OFF -> {
+                        p2pStateWiFiOff()
+                    }
+                    P2P_HANDLER_MSG_STATE_CONNECTED -> {
+                        p2pStateConnected(msg.obj as String)
+                    }
                     P2P_HANDLER_MSG_GROUP_INFO -> {
                         p2pManager.requestGroupInfo(p2pChannel) { group ->
                             //Log.i(TAG, "requestGroupInfo:$group")
@@ -93,12 +175,17 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                                 p2pManager.requestConnectionInfo(p2pChannel) { info ->
                                     Log.i(TAG, "requestConnectionInfo:$info")
                                     if (info?.groupOwnerAddress?.hostAddress?.isNotBlank() == true) {
-                                        val strGatewayIP = info.groupOwnerAddress?.hostAddress.toString()
-                                        p2pState = P2P_STATE_FIND_GATEWAY
-                                        Log.i(TAG, "FIND_GATEWAY:$strGatewayIP")
-                                        strGatewayIp = strGatewayIP
+                                        stopSearchServer()
+                                        clearP2pHandlerMessage()
+                                        Message().let {
+                                            it.what = P2P_HANDLER_MSG_STATE_CONNECTED
+                                            it.obj = info.groupOwnerAddress?.hostAddress.toString()
+                                            p2pHandler?.sendMessage(it)
+                                        }
                                     } else {
-                                        p2pHandler?.sendEmptyMessageDelayed(P2P_HANDLER_MSG_GROUP_INFO, 300)
+                                        p2pHandler?.sendEmptyMessageDelayed(
+                                            P2P_HANDLER_MSG_GROUP_INFO, 300
+                                        )
                                     }
                                 }
                             } else {
@@ -140,48 +227,6 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                 true
             }
         }
-    }
-
-    override fun onResume() {
-        super.onResume()
-        if (bPermissionGranted) {
-            Log.i(TAG, "p2pStart:onResume")
-            p2pStart()
-        }
-    }
-
-    override fun onPause() {
-        super.onPause()
-        p2pStop()
-    }
-
-    companion object {
-        const val TAG = "P2PClient"
-        const val PERMISSIONS_REQUEST_CODE = 1001
-        const val P2P_STATE_WIFI_TURNED_OFF = 0
-        const val P2P_STATE_NO_GATEWAY = 1
-        const val P2P_STATE_FIND_GATEWAY = 2
-        const val NETWORK_NAME = "DIRECT-TUNER14"
-        const val SERVICE_INSTANCE = "_wifidemotest"
-        const val P2P_HANDLER_MSG_CONNECT = 0
-        const val P2P_HANDLER_MSG_GROUP_INFO = 1
-    }
-
-    override fun onConnectionInfoAvailable(p2pInfo: WifiP2pInfo) {
-        Log.i(TAG, "onConnectionInfoAvailable $p2pInfo")
-        //p2pState = P2P_STATE_FIND_GATEWAY
-        //Log.i(TAG, "*FIND_GATEWAY:${p2pInfo.groupOwnerAddress.hostAddress}")
-    }
-
-
-    private var p2pState = P2P_STATE_WIFI_TURNED_OFF
-    private lateinit var p2pChannel: WifiP2pManager.Channel
-    private lateinit var p2pManager: WifiP2pManager
-
-    private var p2pBroadcastReceiver: WiFiDirectBroadcastReceiver1? = null
-    private var serviceRequest: WifiP2pDnsSdServiceRequest? = null
-
-    private fun p2pStart() {
         p2pBroadcastReceiver = WiFiDirectBroadcastReceiver1(p2pManager, p2pChannel, this)
         val intentFilter = IntentFilter()
         intentFilter.addAction(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION)
@@ -193,10 +238,19 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
 
     private fun p2pStop() {
         unregisterReceiver(p2pBroadcastReceiver)
+        if (p2pHandler != null) {
+            p2pHandler?.removeCallbacksAndMessages(null)
+            p2pHandler = null
+        }
     }
 
     private fun startSearchServer() {
+        if (serviceRequest != null) {
+            Log.i(TAG, "startSearchServer already run")
+            return
+        }
         Log.i(TAG, "startSearchServer")
+        serviceRequest = WifiP2pDnsSdServiceRequest.newInstance()
         p2pManager.setDnsSdResponseListeners(
             p2pChannel,
             { instanceName, registrationType, device ->
@@ -219,7 +273,6 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                     "setDnsSdResponseListeners2 $fullDomainName $record $device"
                 )
             })
-        serviceRequest = WifiP2pDnsSdServiceRequest.newInstance()
         p2pManager.addServiceRequest(
             p2pChannel, serviceRequest,
             object : WifiP2pManager.ActionListener {
@@ -273,7 +326,10 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                     //Log.d(TAG, "Device status -$intent")
                     manager.requestPeers(channel) { peerList ->
                         for (device in peerList.deviceList) {
-                            Log.d(TAG, "device.status:${device.deviceName} ${device.status}") // 0이면 connect
+                            Log.d(
+                                TAG,
+                                "device.status:${device.deviceName} ${device.status}"
+                            ) // 0이면 connect
                             //Log.d(TAG, device.toString())
                         }
                     }
