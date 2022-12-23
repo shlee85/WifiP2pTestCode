@@ -105,18 +105,33 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
         }
         p2pManager = getSystemService(Context.WIFI_P2P_SERVICE) as WifiP2pManager
         p2pChannel = p2pManager.initialize(this, mainLooper, null)
-    }
-
-    override fun onResume() {
-        super.onResume()
         if (bPermissionGranted) {
-            Log.i(TAG, "p2pStart:onResume")
+            Log.i(TAG, "p2pStart:onCreate")
             p2pStart()
         }
     }
 
+    override fun onStart() {
+        Log.i(TAG, "POWER:onStart")
+        super.onStart()
+    }
+    override fun onStop() {
+        Log.i(TAG, "POWER:onStop")
+        super.onStop()
+    }
+    override fun onResume() {
+        Log.i(TAG, "POWER:onResume")
+        super.onResume()
+    }
     override fun onPause() {
+        Log.i(TAG, "POWER:onPause")
         super.onPause()
+    }
+
+    override fun onDestroy() {
+        Log.i(TAG, "onDestroy")
+        super.onDestroy()
+        Log.i(TAG, "p2pStop:onDestroy")
         p2pStop()
     }
 
