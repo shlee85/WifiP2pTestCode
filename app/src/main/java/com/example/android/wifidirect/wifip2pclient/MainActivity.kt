@@ -7,9 +7,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Color
-import android.net.NetworkInfo
 import android.net.wifi.p2p.WifiP2pConfig
-import android.net.wifi.p2p.WifiP2pDevice
 import android.net.wifi.p2p.WifiP2pInfo
 import android.net.wifi.p2p.WifiP2pManager
 import android.net.wifi.p2p.WifiP2pManager.ConnectionInfoListener
@@ -19,14 +17,14 @@ import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
 import com.example.android.wifidirect.wifip2pclient.databinding.ActivityMainBinding
 import java.net.InetAddress
-import java.time.LocalDateTime
+import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.concurrent.timer
 
 class MainActivity : AppCompatActivity(), ConnectionInfoListener {
     private lateinit var binding: ActivityMainBinding
     private var bPermissionGranted = false
-    var isWifiP2pEnabled = false
+    private var isWifiP2pEnabled = false
     private var p2pHandler: Handler? = null
     fun setWifiP2pEnable(bEnabled: Boolean) {
         if (isWifiP2pEnabled != bEnabled) {
@@ -57,7 +55,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
         }
     }
 
-    fun clearP2pHandlerMessage() {
+    private fun clearP2pHandlerMessage() {
         p2pHandler?.removeMessages(P2P_HANDLER_MSG_CONNECT)
         p2pHandler?.removeMessages(P2P_HANDLER_MSG_GROUP_INFO)
         p2pHandler?.removeMessages(P2P_HANDLER_MSG_DISCOVER_SERVICE)
@@ -175,7 +173,11 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                 try {
                     val address: InetAddress = InetAddress.getByName(ip)
                     val reachable: Boolean = address.isReachable(500)
-                    val strText = "${LocalDateTime.now()}  ping:$reachable"
+                    val currentTime = SimpleDateFormat(
+                        "hh:mm:ss",
+                        Locale.getDefault()
+                    ).format(Date(System.currentTimeMillis()))
+                    val strText = "$currentTime  ping:$reachable"
                     runOnUiThread {
                         binding.tvPing.setTextColor(if (reachable) Color.BLUE else Color.RED)
                         binding.tvPing.text = strText
@@ -251,7 +253,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                             }
                         }
                     }
-                    P2P_HANDLER_MSG_CONNECT -> {
+                    P2P_HANDLER_MSG_CONNECT -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                         val config = WifiP2pConfig.Builder()
                             .setNetworkName(NETWORK_NAME)
                             .setPassphrase(NETWORK_PASS_PHRASE)
@@ -277,7 +279,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                 true
             }
         }
-        p2pBroadcastReceiver = WiFiDirectBroadcastReceiver(p2pManager, p2pChannel, this)
+        p2pBroadcastReceiver = WiFiDirectBroadcastReceiver()
         val intentFilter = IntentFilter()
         intentFilter.addAction(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION)
         intentFilter.addAction(WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION)
@@ -354,20 +356,17 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
         }
     }
 
-    class WiFiDirectBroadcastReceiver(
-        private val manager: WifiP2pManager, private val channel: WifiP2pManager.Channel,
-        private val activity: MainActivity
-    ) : BroadcastReceiver() {
+    inner class WiFiDirectBroadcastReceiver : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             intent.action?.let { Log.d(TAG, it) }
             when (intent.action) {
                 WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION -> {
                     val state = intent.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, -1)
-                    activity.setWifiP2pEnable(state == WifiP2pManager.WIFI_P2P_STATE_ENABLED)
+                    setWifiP2pEnable(state == WifiP2pManager.WIFI_P2P_STATE_ENABLED)
                 }
                 WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION -> {
                     //Log.d(TAG, "Device status -$intent")
-                    manager.requestPeers(channel) { peerList ->
+                    p2pManager.requestPeers(p2pChannel) { peerList ->
                         for (device in peerList.deviceList) {
                             Log.d(
                                 TAG,
@@ -378,17 +377,15 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                     }
                 }
                 WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION -> {
-                    val networkInfo = intent
-                        .getParcelableExtra<Parcelable>(WifiP2pManager.EXTRA_NETWORK_INFO) as NetworkInfo?
-                    if (networkInfo?.isConnected == true)
-                        manager.requestConnectionInfo(channel, activity as ConnectionInfoListener)
-                    activity.setWifiP2pConnect(networkInfo?.isConnected == true)
-
+                    p2pManager.requestConnectionInfo(p2pChannel) { info ->
+                        Log.i(TAG, "*requestConnectionInfo:$info")
+                        setWifiP2pConnect(info?.groupOwnerAddress?.hostAddress?.isNotBlank() == true)
+                    }
                 }
                 WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION -> {
-                    val device = intent
-                        .getParcelableExtra<Parcelable>(WifiP2pManager.EXTRA_WIFI_P2P_DEVICE) as WifiP2pDevice?
-                    Log.d(TAG, "WIFI_P2P_THIS_DEVICE_CHANGED_ACTION:" + device!!.status)
+                    // val device = intent
+                    //    .getParcelableExtra<Parcelable>(WifiP2pManager.EXTRA_WIFI_P2P_DEVICE) as WifiP2pDevice?
+                    // Log.d(TAG, "WIFI_P2P_THIS_DEVICE_CHANGED_ACTION:" + device!!.status)
                 }
             }
         }
