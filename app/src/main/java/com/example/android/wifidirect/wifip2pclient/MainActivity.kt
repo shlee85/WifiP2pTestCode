@@ -322,13 +322,8 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                         }
                     }
                 }
-            },
-            { fullDomainName, record, device ->
-                Log.d(
-                    TAG,
-                    "setDnsSdResponseListeners2 $fullDomainName $record $device"
-                )
-            })
+            }, null
+        )
         p2pManager.addServiceRequest(
             p2pChannel, p2pServiceRequest,
             object : WifiP2pManager.ActionListener {
@@ -346,12 +341,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
 
     private fun stopSearchServer() {
         if (p2pServiceRequest != null) {
-            p2pManager.removeServiceRequest(
-                p2pChannel, p2pServiceRequest,
-                object : WifiP2pManager.ActionListener {
-                    override fun onSuccess() {}
-                    override fun onFailure(arg0: Int) {}
-                })
+            p2pManager.removeServiceRequest(p2pChannel, p2pServiceRequest, null)
             p2pServiceRequest = null
         }
     }
@@ -367,13 +357,8 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                 WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION -> {
                     //Log.d(TAG, "Device status -$intent")
                     p2pManager.requestPeers(p2pChannel) { peerList ->
-                        for (device in peerList.deviceList) {
-                            Log.d(
-                                TAG,
-                                "device.status:${device.deviceName} ${device.status}"
-                            ) // 0이면 connect
-                            //Log.d(TAG, device.toString())
-                        }
+                        for (device in peerList.deviceList) // status:0이면 connect
+                            Log.d(TAG, "device.status:${device.deviceName} ${device.status}")
                     }
                 }
                 WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION -> {
@@ -381,11 +366,6 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                         Log.i(TAG, "*requestConnectionInfo:$info")
                         setWifiP2pConnect(info?.groupOwnerAddress?.hostAddress?.isNotBlank() == true)
                     }
-                }
-                WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION -> {
-                    // val device = intent
-                    //    .getParcelableExtra<Parcelable>(WifiP2pManager.EXTRA_WIFI_P2P_DEVICE) as WifiP2pDevice?
-                    // Log.d(TAG, "WIFI_P2P_THIS_DEVICE_CHANGED_ACTION:" + device!!.status)
                 }
             }
         }
