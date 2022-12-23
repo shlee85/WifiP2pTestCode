@@ -193,6 +193,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                         Locale.getDefault()
                     ).format(Date(System.currentTimeMillis()))
                     val strText = "$currentTime  ping:$reachable"
+                    Log.i(TAG, strText)
                     runOnUiThread {
                         binding.tvPing.setTextColor(if (reachable) Color.BLUE else Color.RED)
                         binding.tvPing.text = strText
