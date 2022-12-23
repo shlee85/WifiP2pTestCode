@@ -125,8 +125,9 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
     companion object {
         const val TAG = "P2PClient"
         const val PERMISSIONS_REQUEST_CODE = 1001
-        const val NETWORK_NAME = "DIRECT-TUNER14"
-        const val SERVICE_INSTANCE = "_wifidemotest"
+        const val NETWORK_NAME = "DIRECT-LOWASIS-GW"
+        const val NETWORK_PASS_PHRASE = "SLy!x*8E"
+        const val SERVICE_INSTANCE = "_lowasis_gw"
         const val P2P_HANDLER_MSG_CONNECT = 0
         const val P2P_HANDLER_MSG_GROUP_INFO = 1
         const val P2P_HANDLER_MSG_DISCOVER_SERVICE = 2
@@ -252,8 +253,8 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                     }
                     P2P_HANDLER_MSG_CONNECT -> {
                         val config = WifiP2pConfig.Builder()
-                            .setNetworkName("DIRECT-TUNER14")
-                            .setPassphrase("pass1234")
+                            .setNetworkName(NETWORK_NAME)
+                            .setPassphrase(NETWORK_PASS_PHRASE)
                             .enablePersistentMode(true)
                             .setGroupOperatingBand(WifiP2pConfig.GROUP_OWNER_BAND_5GHZ)
                             .build()
