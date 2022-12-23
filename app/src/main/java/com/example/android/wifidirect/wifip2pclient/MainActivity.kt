@@ -141,7 +141,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
     private lateinit var p2pChannel: WifiP2pManager.Channel
     private lateinit var p2pManager: WifiP2pManager
 
-    private var p2pBroadcastReceiver: WiFiDirectBroadcastReceiver? = null
+    private var p2pBroadcastReceiver: BroadcastReceiver? = null
     private var p2pServiceRequest: WifiP2pDnsSdServiceRequest? = null
 
     private var testPingService: Timer? = null // 테스트용 핑
@@ -279,7 +279,30 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                 true
             }
         }
-        p2pBroadcastReceiver = WiFiDirectBroadcastReceiver()
+        p2pBroadcastReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                intent.action?.let { Log.d(TAG, it) }
+                when (intent.action) {
+                    WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION -> {
+                        val state = intent.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, -1)
+                        setWifiP2pEnable(state == WifiP2pManager.WIFI_P2P_STATE_ENABLED)
+                    }
+                    WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION -> {
+                        //Log.d(TAG, "Device status -$intent")
+                        p2pManager.requestPeers(p2pChannel) { peerList ->
+                            for (device in peerList.deviceList) // status:0이면 connect
+                                Log.d(TAG, "device.status:${device.deviceName} ${device.status}")
+                        }
+                    }
+                    WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION -> {
+                        p2pManager.requestConnectionInfo(p2pChannel) { info ->
+                            Log.i(TAG, "*requestConnectionInfo:$info")
+                            setWifiP2pConnect(info?.groupOwnerAddress?.hostAddress?.isNotBlank() == true)
+                        }
+                    }
+                }
+            }
+        }
         val intentFilter = IntentFilter()
         intentFilter.addAction(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION)
         intentFilter.addAction(WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION)
@@ -343,31 +366,6 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
         if (p2pServiceRequest != null) {
             p2pManager.removeServiceRequest(p2pChannel, p2pServiceRequest, null)
             p2pServiceRequest = null
-        }
-    }
-
-    inner class WiFiDirectBroadcastReceiver : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            intent.action?.let { Log.d(TAG, it) }
-            when (intent.action) {
-                WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION -> {
-                    val state = intent.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, -1)
-                    setWifiP2pEnable(state == WifiP2pManager.WIFI_P2P_STATE_ENABLED)
-                }
-                WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION -> {
-                    //Log.d(TAG, "Device status -$intent")
-                    p2pManager.requestPeers(p2pChannel) { peerList ->
-                        for (device in peerList.deviceList) // status:0이면 connect
-                            Log.d(TAG, "device.status:${device.deviceName} ${device.status}")
-                    }
-                }
-                WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION -> {
-                    p2pManager.requestConnectionInfo(p2pChannel) { info ->
-                        Log.i(TAG, "*requestConnectionInfo:$info")
-                        setWifiP2pConnect(info?.groupOwnerAddress?.hostAddress?.isNotBlank() == true)
-                    }
-                }
-            }
         }
     }
 }
