@@ -1,16 +1,17 @@
 plugins {
     id 'com.android.application'
     id 'org.jetbrains.kotlin.android'
+    id 'kotlin-android'
+    id 'kotlin-kapt'
 }
 
 android {
+    namespace 'com.example.android.wifidirect.wifip2pclient'
     compileSdk 33
-    buildFeatures {
-        viewBinding true
-    }
+
     defaultConfig {
         applicationId "com.example.android.wifidirect.wifip2pclient"
-        minSdk 25
+        minSdk 31
         targetSdk 33
         versionCode 1
         versionName "1.0"
@@ -29,9 +30,13 @@ android {
         targetCompatibility JavaVersion.VERSION_11
     }
     kotlinOptions {
-        jvmTarget = '1.8'
+        jvmTarget = '11'
     }
-    namespace 'com.example.android.wifidirect.wifip2pclient'
+
+    buildFeatures {
+        dataBinding true
+        viewBinding true
+    }
 }
 
 dependencies {
@@ -40,6 +45,9 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.5.1'
     implementation 'com.google.android.material:material:1.7.0'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
+    implementation 'com.intuit.sdp:sdp-android:1.1.0'
+    implementation 'com.intuit.ssp:ssp-android:1.1.0'
+    implementation 'androidx.recyclerview:recyclerview-selection:1.1.0'
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test.ext:junit:1.1.4'
     androidTestImplementation 'androidx.test.espresso:espresso-core:3.5.0'

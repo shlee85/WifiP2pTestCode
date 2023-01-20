@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.wifi.p2p.WifiP2pConfig
+import android.net.wifi.p2p.WifiP2pDevice
 import android.net.wifi.p2p.WifiP2pInfo
 import android.net.wifi.p2p.WifiP2pManager
 import android.net.wifi.p2p.WifiP2pManager.ConnectionInfoListener
@@ -15,17 +16,23 @@ import android.net.wifi.p2p.nsd.WifiP2pDnsSdServiceRequest
 import android.os.*
 import android.util.Log
 import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.android.wifidirect.wifip2pclient.databinding.ActivityMainBinding
 import java.net.InetAddress
 import java.text.SimpleDateFormat
 import java.util.*
+import kotlin.collections.ArrayList
 import kotlin.concurrent.timer
+
 
 class MainActivity : AppCompatActivity(), ConnectionInfoListener {
     private lateinit var binding: ActivityMainBinding
     private var bPermissionGranted = false
     private var isWifiP2pEnabled = false
     private var p2pHandler: Handler? = null
+    private var mPeerArray: ArrayList<String> = ArrayList<String>()
+    private var pList = arrayListOf<SimpleModel>()
+
     fun setWifiP2pEnable(bEnabled: Boolean) {
         if (isWifiP2pEnabled != bEnabled) {
             isWifiP2pEnabled = bEnabled
@@ -71,9 +78,11 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
         if (requestCode == PERMISSIONS_REQUEST_CODE) {
             if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                 bPermissionGranted = true
-                p2pStart()
+                //p2pStart()
+                Log.d(TAG, "Request Permission.")
+                restartApp()
             } else {
-                Log.e(TAG, "Fine location permission is not granted!")
+                Log.d(TAG, "Fine location permission is not granted!")
                 finish()
             }
         }
@@ -109,10 +118,48 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
             Log.i(TAG, "p2pStart:onCreate")
             p2pStart()
         }
+
+        binding.ShowList.setOnClickListener {
+            Log.d(TAG, "Show List click.")
+            getPeerList().forEach {
+                Log.d(TAG, "peer : $it")
+            }
+
+            binding.directList.layoutManager = LinearLayoutManager(this@MainActivity)
+            adapter = DirectListAdapter(this, pList, mPeerArray)
+            binding.directList.adapter = adapter
+
+            adapter.setMyItemClickListener(object : DirectListAdapter.MyItemClickListener {
+                override fun onItemClick(pos: Int, name: String?) {
+                    Log.d(TAG, "onItemClick. [$pos - $name]")
+                    mDeviceName = name
+                }
+
+                override fun onItemSelected(pos: Int) {
+                    Log.d(TAG, "onItemSelected")
+                }
+            })
+        }
+    }
+
+    private lateinit var adapter: DirectListAdapter
+    private var chList = arrayListOf<SimpleModel>()
+
+    private fun setPeerList(str: String) {
+        mPeerArray.add(str)
+    }
+
+    fun getPeerList() : ArrayList<String> {
+        return mPeerArray
+    }
+
+    fun resetPeerList() {
+        mPeerArray.clear()
     }
 
     override fun onStart() {
         Log.i(TAG, "POWER:onStart")
+
         super.onStart()
     }
     override fun onStop() {
@@ -160,6 +207,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
     private var p2pServiceRequest: WifiP2pDnsSdServiceRequest? = null
 
     private var testPingService: Timer? = null // 테스트용 핑
+    private var mDeviceName: String? = null
 
     private fun p2pStateConnecting() {
         val strMessage = "Connecting..."
@@ -193,7 +241,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                         Locale.getDefault()
                     ).format(Date(System.currentTimeMillis()))
                     val strText = "$currentTime  ping:$reachable"
-                    Log.i(TAG, strText)
+                    //Log.i(TAG, strText)
                     runOnUiThread {
                         binding.tvPing.setTextColor(if (reachable) Color.BLUE else Color.RED)
                         binding.tvPing.text = strText
@@ -246,7 +294,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                     }
                     P2P_HANDLER_MSG_GROUP_INFO -> {
                         p2pManager.requestGroupInfo(p2pChannel) { group ->
-                            //Log.i(TAG, "requestGroupInfo:$group")
+                            Log.i(TAG, "requestGroupInfo:$group")
                             if (group?.networkName == NETWORK_NAME) {
                                 p2pManager.requestConnectionInfo(p2pChannel) { info ->
                                     Log.i(TAG, "requestConnectionInfo:$info")
@@ -271,7 +319,8 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                     }
                     P2P_HANDLER_MSG_CONNECT -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                         val config = WifiP2pConfig.Builder()
-                            .setNetworkName(NETWORK_NAME)
+                            //.setNetworkName(NETWORK_NAME)
+                            .setNetworkName(mDeviceName!!)
                             .setPassphrase(NETWORK_PASS_PHRASE)
                             .enablePersistentMode(true)
                             .setGroupOperatingBand(WifiP2pConfig.GROUP_OWNER_BAND_5GHZ)
@@ -302,19 +351,28 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                     WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION -> {
                         val state = intent.getIntExtra(WifiP2pManager.EXTRA_WIFI_STATE, -1)
                         setWifiP2pEnable(state == WifiP2pManager.WIFI_P2P_STATE_ENABLED)
+                        Log.d(TAG, "[WIFI-P2P] WIFI 상태 변화체크.")
                     }
                     WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION -> {
-                        //Log.d(TAG, "Device status -$intent")
+                        resetPeerList()
+                        Log.d(TAG, "[WIFI-P2P] Peers List변화 Device status -$intent")
                         p2pManager.requestPeers(p2pChannel) { peerList ->
-                            for (device in peerList.deviceList) // status:0이면 connect
-                                Log.d(TAG, "device.status:${device.deviceName} ${device.status}")
+                            for (device in peerList.deviceList) { // status:0이면 connect
+                                Log.d(TAG, "[WIFI-P2P] device name :${device.deviceName} ${getStatus(device.status)}, ${device.status}")
+                                pList.add(SimpleModel(device.deviceName))
+                                setPeerList(device.deviceName)
+                            }
                         }
                     }
                     WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION -> {
+                        Log.d(TAG, "[WIFI-P2P] WIFI 상태변화")
                         p2pManager.requestConnectionInfo(p2pChannel) { info ->
                             Log.i(TAG, "*requestConnectionInfo:$info")
                             setWifiP2pConnect(info?.groupOwnerAddress?.hostAddress?.isNotBlank() == true)
                         }
+                    }
+                    WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION -> {
+                        Log.d(TAG, "[WIFI-P2P] 현재 Device상태 변화. ")
                     }
                 }
             }
@@ -332,6 +390,16 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
         if (p2pHandler != null) {
             p2pHandler?.removeCallbacksAndMessages(null)
             p2pHandler = null
+        }
+    }
+
+    //람다.
+    private val getStatus : (Int) -> (String) = {
+        when(it) {
+            WifiP2pDevice.AVAILABLE -> "사용가능"
+            WifiP2pDevice.CONNECTED -> "연결"
+            WifiP2pDevice.FAILED -> "실패"
+            else -> "잘못됨."
         }
     }
 
@@ -383,6 +451,12 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
             p2pManager.removeServiceRequest(p2pChannel, p2pServiceRequest, null)
             p2pServiceRequest = null
         }
+    }
+
+    private fun restartApp() {
+        val componentName = (this.packageManager).getLaunchIntentForPackage(packageName)?.component
+        startActivity(Intent.makeRestartActivityTask(componentName))
+        System.exit(0)
     }
 }
 
