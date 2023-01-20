@@ -132,7 +132,10 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
             adapter.setMyItemClickListener(object : DirectListAdapter.MyItemClickListener {
                 override fun onItemClick(pos: Int, name: String?) {
                     Log.d(TAG, "onItemClick. [$pos - $name]")
-                    mDeviceName = name
+                    if (name != null) {
+                        mDeviceName = name
+                    }
+                    startSearchServer()
                 }
 
                 override fun onItemSelected(pos: Int) {
@@ -207,7 +210,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
     private var p2pServiceRequest: WifiP2pDnsSdServiceRequest? = null
 
     private var testPingService: Timer? = null // 테스트용 핑
-    private var mDeviceName: String? = null
+    private var mDeviceName: String = "DIRECT-LOWASIS-GW"
 
     private fun p2pStateConnecting() {
         val strMessage = "Connecting..."
@@ -295,7 +298,8 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                     P2P_HANDLER_MSG_GROUP_INFO -> {
                         p2pManager.requestGroupInfo(p2pChannel) { group ->
                             Log.i(TAG, "requestGroupInfo:$group")
-                            if (group?.networkName == NETWORK_NAME) {
+                            //if (group?.networkName == NETWORK_NAME) {
+                            if (group?.networkName == mDeviceName) {
                                 p2pManager.requestConnectionInfo(p2pChannel) { info ->
                                     Log.i(TAG, "requestConnectionInfo:$info")
                                     if (info?.groupOwnerAddress?.hostAddress?.isNotBlank() == true) {
@@ -320,7 +324,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                     P2P_HANDLER_MSG_CONNECT -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                         val config = WifiP2pConfig.Builder()
                             //.setNetworkName(NETWORK_NAME)
-                            .setNetworkName(mDeviceName!!)
+                            .setNetworkName(mDeviceName)
                             .setPassphrase(NETWORK_PASS_PHRASE)
                             .enablePersistentMode(true)
                             .setGroupOperatingBand(WifiP2pConfig.GROUP_OWNER_BAND_5GHZ)
