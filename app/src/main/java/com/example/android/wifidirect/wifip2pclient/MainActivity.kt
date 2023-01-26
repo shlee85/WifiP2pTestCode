@@ -210,7 +210,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
     private var p2pServiceRequest: WifiP2pDnsSdServiceRequest? = null
 
     private var testPingService: Timer? = null // 테스트용 핑
-    private var mDeviceName: String = "DIRECT-LOWASIS-GW"
+    private var mDeviceName: String = "DIRECT-LOWASIS-"
 
     private fun p2pStateConnecting() {
         val strMessage = "Connecting..."
@@ -231,7 +231,8 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
     }
 
     private fun p2pStateConnected(ip: String) {
-        val strMessage = "Connected $ip"
+        val strMessage = "Connected $ip : $mDeviceName"
+
         binding.tvMessage.text = strMessage
         if (testPingService == null) { // 이 타이머는 서버와의 연결 확인 테스트 용임
             testPingService = timer(period = 1000, initialDelay = 1000)
@@ -279,6 +280,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                     }
                     P2P_HANDLER_MSG_STATE_CONNECTED -> {
                         p2pStateConnected(msg.obj as String)
+                        Log.d(TAG, "SHLEE : obj = ${msg.obj}, ${msg.what}, ip : ${msg.obj.toString().split(";")[0]}")
                     }
                     P2P_HANDLER_MSG_DISCOVER_SERVICE -> {
                         p2pHandler?.sendEmptyMessageDelayed(P2P_HANDLER_MSG_DISCOVER_SERVICE, 3000)
@@ -363,8 +365,10 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                         p2pManager.requestPeers(p2pChannel) { peerList ->
                             for (device in peerList.deviceList) { // status:0이면 connect
                                 Log.d(TAG, "[WIFI-P2P] device name :${device.deviceName} ${getStatus(device.status)}, ${device.status}")
-                                pList.add(SimpleModel(device.deviceName))
-                                setPeerList(device.deviceName)
+                                if(device.deviceName.contains("LOWASIS")) {
+                                    pList.add(SimpleModel(device.deviceName))
+                                    setPeerList(device.deviceName)
+                                }
                             }
                         }
                     }
@@ -426,7 +430,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                         Message().let { msg ->
                             msg.what = P2P_HANDLER_MSG_CONNECT // onFailure 시 재시도를 위해 핸들러로 처리한다.
                             msg.arg1 = i
-                            msg.obj = device.deviceAddress
+                            msg.obj = device.deviceName
                             // 한번에 다 보내고 성공하면 모두 취소한다.
                             // connect 할 때 error 발생이 많다.
                             p2pHandler?.sendMessageDelayed(msg, 250L * i)
