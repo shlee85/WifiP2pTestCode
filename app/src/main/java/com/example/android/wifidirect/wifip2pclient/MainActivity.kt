@@ -403,7 +403,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                     WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION -> {
                         resetPeerList()
                         Log.d(TAG, "[WIFI-P2P] Peers List변화 Device status -$intent")
-                        p2pManager.requestPeers(p2pChannel) { peerList ->
+                        p2pManager.requestPeers(p2pChannel, peerListListener)/* { peerList ->
                             for (device in peerList.deviceList) { // status:0이면 connect
                                 Log.d(TAG, "[WIFI-P2P] device name :${device.deviceName} ${getStatus(device.status)}, ${device.status}")
                                 if(device.deviceName.contains("LOWASIS")) {
@@ -412,8 +412,8 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                                     //setPeerList(device.deviceName)
                                 }
                             }
-                        }
-                        setPeerList()
+                        }*/
+                        //setPeerList()
                     }
                     WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION -> {
                         Log.d(TAG, "[WIFI-P2P] WIFI 상태변화")
@@ -450,7 +450,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
             WifiP2pDevice.AVAILABLE -> "사용가능"
             WifiP2pDevice.CONNECTED -> "연결"
             WifiP2pDevice.FAILED -> "실패"
-            else -> "잘못됨."
+            else -> "INVALID."
         }
     }
 
@@ -513,6 +513,30 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
         val componentName = (this.packageManager).getLaunchIntentForPackage(packageName)?.component
         startActivity(Intent.makeRestartActivityTask(componentName))
         System.exit(0)
+    }
+
+    /* PEER_CHANGED_ACTION이벤트가 발생되면 requestPeers()가 호출 되면서 해당 listener호출됨 */
+    private val peers = mutableListOf<WifiP2pDevice>()
+    private val peerListListener = WifiP2pManager.PeerListListener { peerList ->
+        val refreshedPeers = peerList.deviceList
+        if(refreshedPeers != peers) {
+            peers.clear()
+            peers.addAll(refreshedPeers)
+
+            refreshedPeers.forEach {
+                Log.d(TAG, "[WIFI-P2P] List : ${it.deviceName}")
+                if(it.deviceName.contains("LOWASIS")) {
+                    mList.add(it.deviceName)
+                }
+            }
+
+            setPeerList()
+        }
+
+        if(peers.isEmpty()) {
+            Log.d(TAG, "No Device found")
+            return@PeerListListener
+        }
     }
 }
 
