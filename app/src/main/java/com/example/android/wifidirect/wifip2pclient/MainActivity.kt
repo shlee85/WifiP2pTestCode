@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.net.wifi.p2p.WifiP2pConfig
 import android.net.wifi.p2p.WifiP2pDevice
+import android.net.wifi.p2p.WifiP2pGroup
 import android.net.wifi.p2p.WifiP2pInfo
 import android.net.wifi.p2p.WifiP2pManager
 import android.net.wifi.p2p.WifiP2pManager.ConnectionInfoListener
@@ -30,8 +31,11 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
     private var bPermissionGranted = false
     private var isWifiP2pEnabled = false
     private var p2pHandler: Handler? = null
+    private var mList: ArrayList<String> = ArrayList<String>()
     private var mPeerArray: ArrayList<String> = ArrayList<String>()
     private var pList = arrayListOf<SimpleModel>()
+
+    private var gCnt = 1
 
     fun setWifiP2pEnable(bEnabled: Boolean) {
         if (isWifiP2pEnabled != bEnabled) {
@@ -119,11 +123,40 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
             p2pStart()
         }
 
+        binding.testBtn.setOnClickListener {
+            Log.d(TAG, "테스트 버튼")
+            Log.d(TAG, "[WIFI-P2P] wifi connect status : ${WifiP2pDevice.CONNECTED}")
+            p2pManager.removeGroup(p2pChannel, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() {
+                    Log.d(TAG, "[DISCOVER]removeGroup. onSuccess()")
+                    p2pManager.cancelConnect(p2pChannel, null)
+                    p2pManager.clearLocalServices(p2pChannel, null)
+                    p2pManager.clearServiceRequests(p2pChannel, null)
+                    p2pManager.stopPeerDiscovery(p2pChannel, null)
+                }
+
+                override fun onFailure(p0: Int) {
+                    Log.d(TAG, "[DISCOVER]removeGroup. onFailure():$p0")
+                }
+            })
+
+        }
+
         binding.ShowList.setOnClickListener {
-            Log.d(TAG, "Show List click.")
+            Log.d(TAG, "Show List click., count [$gCnt]")
             getPeerList().forEach {
                 Log.d(TAG, "peer : $it")
             }
+
+            p2pManager.discoverPeers(p2pChannel, object : WifiP2pManager.ActionListener {
+                override fun onSuccess() {
+                    Log.d(TAG, "[DISCOVER]discoverPeers. onSuccess()")
+                }
+
+                override fun onFailure(p0: Int) {
+                    Log.d(TAG, "[DISCOVER]discoverPeers. onFailure():$p0")
+                }
+            })
 
             binding.directList.layoutManager = LinearLayoutManager(this@MainActivity)
             adapter = DirectListAdapter(this, pList, mPeerArray)
@@ -135,7 +168,10 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                     if (name != null) {
                         mDeviceName = name
                     }
+                    stopSearchServer()
+
                     startSearchServer()
+                    p2pHandler?.sendEmptyMessage(P2P_HANDLER_MSG_STATE_CONNECTING)
                 }
 
                 override fun onItemSelected(pos: Int) {
@@ -148,8 +184,11 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
     private lateinit var adapter: DirectListAdapter
     private var chList = arrayListOf<SimpleModel>()
 
-    private fun setPeerList(str: String) {
-        mPeerArray.add(str)
+    private fun setPeerList() {
+        mList.distinct().forEach {
+            mPeerArray.add(it)
+            pList.add(SimpleModel(it))
+        }
     }
 
     fun getPeerList() : ArrayList<String> {
@@ -157,6 +196,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
     }
 
     fun resetPeerList() {
+        pList.clear()
         mPeerArray.clear()
     }
 
@@ -186,7 +226,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
     }
 
     companion object {
-        const val TAG = "P2PClient"
+        const val TAG = "SHLEE-DIRECT"
         const val PERMISSIONS_REQUEST_CODE = 1001
         const val NETWORK_NAME = "DIRECT-LOWASIS-GW"
         const val NETWORK_PASS_PHRASE = "SLy!x*8E"
@@ -299,7 +339,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                     }
                     P2P_HANDLER_MSG_GROUP_INFO -> {
                         p2pManager.requestGroupInfo(p2pChannel) { group ->
-                            Log.i(TAG, "requestGroupInfo:$group")
+                            Log.i(TAG, "requestGroupInfo:$group, device name : $mDeviceName")
                             //if (group?.networkName == NETWORK_NAME) {
                             if (group?.networkName == mDeviceName) {
                                 p2pManager.requestConnectionInfo(p2pChannel) { info ->
@@ -324,6 +364,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                         }
                     }
                     P2P_HANDLER_MSG_CONNECT -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                        Log.d(TAG, "[WIFI-P2P] in MSG_CONNECT, name : $mDeviceName")
                         val config = WifiP2pConfig.Builder()
                             //.setNetworkName(NETWORK_NAME)
                             .setNetworkName(mDeviceName)
@@ -366,11 +407,13 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                             for (device in peerList.deviceList) { // status:0이면 connect
                                 Log.d(TAG, "[WIFI-P2P] device name :${device.deviceName} ${getStatus(device.status)}, ${device.status}")
                                 if(device.deviceName.contains("LOWASIS")) {
-                                    pList.add(SimpleModel(device.deviceName))
-                                    setPeerList(device.deviceName)
+                                    mList.add(device.deviceName)
+                                    //pList.add(SimpleModel(device.deviceName))
+                                    //setPeerList(device.deviceName)
                                 }
                             }
                         }
+                        setPeerList()
                     }
                     WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION -> {
                         Log.d(TAG, "[WIFI-P2P] WIFI 상태변화")
@@ -416,6 +459,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
             Log.i(TAG, "startSearchServer already run")
             return
         }
+        gCnt++
         Log.i(TAG, "startSearchServer")
         p2pServiceRequest = WifiP2pDnsSdServiceRequest.newInstance()
         p2pManager.setDnsSdResponseListeners(
@@ -423,14 +467,14 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
             { instanceName, registrationType, device ->
                 Log.d(
                     TAG,
-                    "DnsSdResponseListeners $instanceName $registrationType $device"
+                    "[WIFI-P2P]start search server->DnsSdResponseListeners $instanceName $registrationType $device"
                 )
                 if (instanceName.equals(SERVICE_INSTANCE, ignoreCase = true)) {
                     for (i in 1..5) {
                         Message().let { msg ->
                             msg.what = P2P_HANDLER_MSG_CONNECT // onFailure 시 재시도를 위해 핸들러로 처리한다.
                             msg.arg1 = i
-                            msg.obj = device.deviceName
+                            msg.obj = device.deviceAddress
                             // 한번에 다 보내고 성공하면 모두 취소한다.
                             // connect 할 때 error 발생이 많다.
                             p2pHandler?.sendMessageDelayed(msg, 250L * i)
@@ -451,10 +495,14 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                 }
             }
         )
+
+        //해당 메세지는 discoverPeer를 호출 하면 굳이 필요가 없을 것으로 판단된다.
+        //테스트를 진행해보자. 애초에 연결할 목록이 있는지 주기적으로 요청해서 requestPeer가 호출되도록 하는 목적이었음.
         p2pHandler?.sendEmptyMessage(P2P_HANDLER_MSG_DISCOVER_SERVICE)
     }
 
     private fun stopSearchServer() {
+        Log.d(TAG,"[WIFI-P2P] stopSerarchServer()")
         if (p2pServiceRequest != null) {
             p2pManager.removeServiceRequest(p2pChannel, p2pServiceRequest, null)
             p2pServiceRequest = null
