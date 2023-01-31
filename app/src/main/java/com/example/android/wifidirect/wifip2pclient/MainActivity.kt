@@ -154,9 +154,6 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
 
         binding.ShowList.setOnClickListener {
             Log.d(TAG, "Show List click., count [$gCnt]")
-            getPeerList().forEach {
-                Log.d(TAG, "peer : $it")
-            }
 
             p2pManager.discoverPeers(p2pChannel, object : WifiP2pManager.ActionListener {
                 override fun onSuccess() {
@@ -169,7 +166,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
             })
 
             binding.directList.layoutManager = LinearLayoutManager(this@MainActivity)
-            adapter = DirectListAdapter(this, pList, mPeerArray)
+            adapter = DirectListAdapter(this, pList)
             binding.directList.adapter = adapter
 
             adapter.setMyItemClickListener(object : DirectListAdapter.MyItemClickListener {
@@ -211,19 +208,20 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
     }
 
     private fun setPeerList() {
+        //중복값 제거.
         mList.distinct().forEach {
-            mPeerArray.add(it)
             pList.add(SimpleModel(it))
+        }
+
+        pList.forEach {
+            Log.d(TAG, "RecyclerView에 표시할 List [$it]")
         }
     }
 
-    fun getPeerList() : ArrayList<String> {
-        return mPeerArray
-    }
-
-    fun resetPeerList() {
+    private fun resetPeerList() {
+        mList.clear()
         pList.clear()
-        mPeerArray.clear()
+        mPeerList.clear()
     }
 
     override fun onStart() {
@@ -430,7 +428,6 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                         Log.d(TAG, "[WIFI-P2P] WIFI 상태 변화체크.")
                     }
                     WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION -> {
-                        resetPeerList()
                         Log.d(TAG, "[WIFI-P2P] Peers List변화 Device status -$intent")
                         p2pManager.requestPeers(p2pChannel, peerListListener)/* { peerList ->
                             for (device in peerList.deviceList) { // status:0이면 connect
@@ -565,6 +562,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
     private val peerListListener = WifiP2pManager.PeerListListener { peerList ->
         val refreshedPeers = peerList.deviceList
         if(refreshedPeers != peers) {
+            resetPeerList()
             peers.clear()
             peers.addAll(refreshedPeers)
 
@@ -607,16 +605,3 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
         }
     }
 }
-
-//23-01-30
-/*
-31일은. 기존꺼에서 동작 순서를 변화를 주는 테스트를 진행 할 예정.
-1. 연결 목록 요청
-2. 가져온 목록을 선택하여 연결시도.
-3. 연결되는지 확인.
-
-기존에 시작하면 setWifiP2pEnable()을 호출하는데 이렇게 하지말고. discoverPeers를 사용하여
-p2p를 먼저 요청하고 시작하는 부분으로 접근 해보자.
-https://developer.android.com/training/connect-devices-wirelessly/wifi-direct?hl=ko
- */
-

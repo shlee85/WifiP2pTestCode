@@ -14,8 +14,7 @@ data class SimpleModel(
     //var isSelected: Boolean
 )
 
-class DirectListAdapter (private val context: Context, private val list: ArrayList<SimpleModel>,
-    private val peerList: ArrayList<String>)
+class DirectListAdapter (private val context: Context, private val list: ArrayList<SimpleModel>)
     :RecyclerView.Adapter<DirectListAdapter.MainViewHolder>() {
 
     private lateinit var binding: DirectListThemeBinding
@@ -50,10 +49,6 @@ class DirectListAdapter (private val context: Context, private val list: ArrayLi
         Log.d(TAG, "onCreateViewHolder()")
         binding = DirectListThemeBinding.inflate(LayoutInflater.from(context), parent, false)
 
-        mMainAct.getPeerList().forEach {
-            Log.d(TAG, "list : $it")
-        }
-
         return MainViewHolder(binding)
     }
 
@@ -65,10 +60,10 @@ class DirectListAdapter (private val context: Context, private val list: ArrayLi
     }
 
     override fun getItemCount(): Int {
-        return peerList.size
+        return list.size
     }
 
     companion object {
-        val TAG = DirectListAdapter::class.java.simpleName
+        val TAG: String = DirectListAdapter::class.java.simpleName
     }
 }
