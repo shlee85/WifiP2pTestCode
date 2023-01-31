@@ -40,10 +40,9 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
     private var isWifiP2pEnabled = false
     private var p2pHandler: Handler? = null
     private var mList: ArrayList<String> = ArrayList<String>()
-    private var mPeerArray: ArrayList<String> = ArrayList<String>()
     private var pList = arrayListOf<SimpleModel>()
     private var mPeerList: ArrayList<PeersList> = ArrayList<PeersList>()
-    private lateinit var adapter: DirectListAdapter
+    private var adapter: DirectListAdapter ?= null
 
     private var gCnt = 1
 
@@ -162,46 +161,6 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
 
                 override fun onFailure(p0: Int) {
                     Log.d(TAG, "[DISCOVER]discoverPeers. onFailure():$p0")
-                }
-            })
-
-            binding.directList.layoutManager = LinearLayoutManager(this@MainActivity)
-            adapter = DirectListAdapter(this, pList)
-            binding.directList.adapter = adapter
-
-            adapter.setMyItemClickListener(object : DirectListAdapter.MyItemClickListener {
-                override fun onItemClick(pos: Int, name: String?) {
-                    Log.d(TAG, "onItemClick. [$pos - $name]")
-                    if (name != null) {
-                        mDeviceName = name
-                    }
-
-                    val config = WifiP2pConfig()
-                    //config.deviceAddress = peers[0].deviceAddress
-                    for(i in 0 until mPeerList.size step(1)) {
-                        if(mPeerList[i].deviceName == mDeviceName) {
-                            config.deviceAddress = mPeerList[i].deviceAddress
-                        }
-                    }
-
-                    peers.forEach {
-                        Log.d(TAG, "peers addr : ${it.deviceAddress}, name : ${it.deviceName}")
-                    }
-
-                    p2pManager.connect(p2pChannel, config, object :WifiP2pManager.ActionListener {
-                        override fun onSuccess() {
-                            Toast.makeText(applicationContext, "Connected to + $mDeviceName", Toast.LENGTH_SHORT).show()
-                            p2pHandler?.sendEmptyMessageDelayed(P2P_HANDLER_MSG_GROUP_INFO, 300)
-                        }
-
-                        override fun onFailure(p0: Int) {
-                            Toast.makeText(applicationContext, "Not Connected", Toast.LENGTH_SHORT).show()
-                        }
-                    })
-                }
-
-                override fun onItemSelected(pos: Int) {
-                    Log.d(TAG, "onItemSelected")
                 }
             })
         }
@@ -363,7 +322,6 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                     P2P_HANDLER_MSG_GROUP_INFO -> {
                         p2pManager.requestGroupInfo(p2pChannel) { group ->
                             Log.i(TAG, "requestGroupInfo:$group, device name : $mDeviceName")
-                            //if (group?.networkName == NETWORK_NAME) {
                             if (group?.networkName == mDeviceName) {
                                 p2pManager.requestConnectionInfo(p2pChannel) { info ->
                                     Log.i(TAG, "requestConnectionInfo:$info")
@@ -389,16 +347,13 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                     P2P_HANDLER_MSG_CONNECT -> if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                         Log.d(TAG, "[WIFI-P2P] in MSG_CONNECT, name : $mDeviceName")
                         val config = WifiP2pConfig.Builder()
-                            //.setNetworkName(NETWORK_NAME)
                             .setNetworkName(mDeviceName)
                             .setPassphrase(NETWORK_PASS_PHRASE)
                             .enablePersistentMode(true)
                             .setGroupOperatingBand(WifiP2pConfig.GROUP_OWNER_BAND_5GHZ)
                             .build()
-                        //config.deviceAddress = msg.obj as String // device.deviceAddress
-                        val device = peers[0]
-                        config.deviceAddress = device.deviceAddress
-                        config.wps.setup = WpsInfo.PBC
+                        config.deviceAddress = msg.obj as String // device.deviceAddress
+
                         Log.i(TAG, "config.deviceAddress:${config.deviceAddress}")
                         p2pManager.connect(
                             p2pChannel, config,
@@ -429,17 +384,7 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                     }
                     WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION -> {
                         Log.d(TAG, "[WIFI-P2P] Peers List변화 Device status -$intent")
-                        p2pManager.requestPeers(p2pChannel, peerListListener)/* { peerList ->
-                            for (device in peerList.deviceList) { // status:0이면 connect
-                                Log.d(TAG, "[WIFI-P2P] device name :${device.deviceName} ${getStatus(device.status)}, ${device.status}")
-                                if(device.deviceName.contains("LOWASIS")) {
-                                    mList.add(device.deviceName)
-                                    //pList.add(SimpleModel(device.deviceName))
-                                    //setPeerList(device.deviceName)
-                                }
-                            }
-                        }*/
-                        //setPeerList()
+                        p2pManager.requestPeers(p2pChannel, peerListListener)
                     }
                     WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION -> {
                         Log.d(TAG, "[WIFI-P2P] WIFI 상태변화")
@@ -451,7 +396,6 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
                          */
 
                         p2pManager.let { manager ->
-
                             val networkInfo: NetworkInfo? = intent
                                 .getParcelableExtra(WifiP2pManager.EXTRA_NETWORK_INFO)
 
@@ -576,6 +520,45 @@ class MainActivity : AppCompatActivity(), ConnectionInfoListener {
 
             setPeerList()
         }
+
+        binding.directList.layoutManager = LinearLayoutManager(this@MainActivity)
+        adapter = DirectListAdapter(this, pList)
+        binding.directList.adapter = adapter
+
+        adapter?.setMyItemClickListener(object : DirectListAdapter.MyItemClickListener {
+            override fun onItemClick(pos: Int, name: String?) {
+                Log.d(TAG, "onItemClick. [$pos - $name]")
+                if (name != null) {
+                    mDeviceName = name
+                }
+
+                val config = WifiP2pConfig()
+                for(i in 0 until mPeerList.size step(1)) {
+                    if(mPeerList[i].deviceName == mDeviceName) {
+                        config.deviceAddress = mPeerList[i].deviceAddress
+                    }
+                }
+
+                peers.forEach {
+                    Log.d(TAG, "peers addr : ${it.deviceAddress}, name : ${it.deviceName}")
+                }
+
+                p2pManager.connect(p2pChannel, config, object :WifiP2pManager.ActionListener {
+                    override fun onSuccess() {
+                        Toast.makeText(applicationContext, "Connected to + $mDeviceName", Toast.LENGTH_SHORT).show()
+                        p2pHandler?.sendEmptyMessageDelayed(P2P_HANDLER_MSG_GROUP_INFO, 300)
+                    }
+
+                    override fun onFailure(p0: Int) {
+                        Toast.makeText(applicationContext, "Not Connected", Toast.LENGTH_SHORT).show()
+                    }
+                })
+            }
+
+            override fun onItemSelected(pos: Int) {
+                Log.d(TAG, "onItemSelected")
+            }
+        })
 
         if(peers.isEmpty()) {
             Log.d(TAG, "No Device found")
